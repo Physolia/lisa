@@ -9,9 +9,9 @@ from semver import VersionInfo
 
 from lisa.executable import Tool
 from lisa.nic import NicInfo
-from lisa.operating_system import CentOs, Redhat, Ubuntu
+from lisa.operating_system import CentOs, Fedora, Redhat, Ubuntu
 from lisa.tools import Echo, Git, Lscpu, Lspci, Modprobe, Service, Tar, Wget
-from lisa.util import LisaException, UnsupportedDistroException
+from lisa.util import LisaException, SkippedException, UnsupportedDistroException
 
 
 class DpdkTestpmd(Tool):
@@ -101,7 +101,7 @@ class DpdkTestpmd(Tool):
 
     @property
     def can_install(self) -> bool:
-        for _os in [Ubuntu, CentOs, Redhat]:
+        for _os in [Ubuntu, Fedora]:
             if isinstance(self.node.os, _os):
                 return True
         return False
@@ -381,7 +381,7 @@ class DpdkTestpmd(Tool):
             )
             if isinstance(node.os, Ubuntu):
                 node.os.install_packages(["dpdk", "dpdk-dev"])
-            elif isinstance(node.os, Redhat):
+            elif isinstance(node.os, Fedora):
                 node.os.install_packages(["dpdk", "dpdk-devel"])
             else:
                 raise NotImplementedError(
@@ -521,7 +521,7 @@ class DpdkTestpmd(Tool):
         modprobe = self.node.tools[Modprobe]
         if isinstance(self.node.os, Ubuntu):
             modprobe.load("rdma_cm")
-        elif isinstance(self.node.os, Redhat):
+        elif isinstance(self.node.os, Fedora):
             if not self.is_connect_x3:
                 self.node.execute(
                     f"dracut --add-drivers '{' '.join(mellanox_drivers)} ib_uverbs' -f",
@@ -544,6 +544,17 @@ class DpdkTestpmd(Tool):
 
         if isinstance(node.os, Ubuntu):
             node.os.add_repository("ppa:canonical-server/server-backports")
+            if "14.04" in node.os.information.release:
+                raise SkippedException(
+                    node.os, "Ubuntu 14.04 is EOL and not supported by dpdk tests"
+                )
+            if "16.04" in node.os.information.release:
+                raise UnsupportedDistroException(
+                    node.os,
+                    "16.04 install is not supported yet."
+                    "The installation must be adjusted to only install dpdk 18.11."
+                    "Current install from source only supports >19.11",
+                )
             if "18.04" in node.os.information.release:
                 node.os.install_packages(list(self._ubuntu_packages_1804))
                 # ubuntu 18 has some issue with the packaged versions of meson
@@ -589,9 +600,10 @@ class DpdkTestpmd(Tool):
             elif "20.04" in node.os.information.release:
                 node.os.install_packages(list(self._ubuntu_packages_2004))
 
-        elif isinstance(node.os, Redhat):
+        elif isinstance(node.os, Redhat) or isinstance(node.os, CentOs):
             if node.os.information.version.major < 7:
-                raise UnsupportedDistroException(
+                # SKIP for old unsupported versions.
+                raise SkippedException(
                     node.os, "DPDK for Redhat < 7 is not supported by this test"
                 )
             elif node.os.information.version.major == 7:
@@ -676,7 +688,9 @@ class DpdkTestpmd(Tool):
                 ),
             )
         else:
-            raise UnsupportedDistroException(node.os)
+            raise UnsupportedDistroException(
+                node.os, "This OS does not have dpdk installation implemented yet."
+            )
 
     def _split_testpmd_output(self) -> None:
         search_str = "Port 0: device removal event"
