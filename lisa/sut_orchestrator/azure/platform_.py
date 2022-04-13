@@ -363,6 +363,12 @@ class AzurePlatform(Platform):
                     else:
                         existing_location = node_runbook.location
 
+                    if node_runbook.marketplace:
+                        # resolve Latest to specified version
+                        node_runbook.marketplace = self._parse_marketplace_image(
+                            node_runbook.location, node_runbook.marketplace
+                        )
+
             if existing_location:
                 locations = [existing_location]
             else:
